@@ -16,10 +16,12 @@ import DeliveryReturns from './pages/DeliveryReturns';
 import FAQ from './pages/FAQ';
 import Privacy from './pages/Privacy';
 import Terms from './pages/Terms';
+import ScrollToTop from './components/ScrollToTop';
 
 export default function App() {
   return (
     <>
+    <ScrollToTop />
       <Navbar />
 
       <main>
@@ -72,7 +74,7 @@ export default function App() {
             path="/delivery-returns"
             element={<DeliveryReturns />}
           />
-          
+
           <Route 
           path="/faq" 
           element={<FAQ />} 
