@@ -20,18 +20,26 @@ export default function ProductDetails() {
   const { add } = useCart();
 
   useEffect(() => {
-    getDoc(doc(db, 'products', id))
-      .then((snapshot) => {
+    async function loadProduct() {
+      try {
+        const snapshot = await getDoc(
+          doc(db, 'products', id)
+        );
+
         if (snapshot.exists()) {
           setProduct({
             id: snapshot.id,
             ...snapshot.data(),
           });
         }
-      })
-      .finally(() => {
+      } catch (error) {
+        console.error(error);
+      } finally {
         setLoading(false);
-      });
+      }
+    }
+
+    loadProduct();
   }, [id]);
 
   if (loading) {
@@ -50,6 +58,32 @@ export default function ProductDetails() {
     );
   }
 
+  const stock = Number(product.stock ?? 0);
+
+  const normalPrice = Number(
+    product.price || 0
+  );
+
+  const salePrice = Number(
+    product.salePrice || 0
+  );
+
+  const onSale =
+    salePrice > 0 &&
+    salePrice < normalPrice;
+
+  const actualPrice = onSale
+    ? salePrice
+    : normalPrice;
+
+  const outOfStock = stock <= 0;
+
+  const cartProduct = {
+    ...product,
+    price: actualPrice,
+    originalPrice: normalPrice,
+  };
+
   return (
     <section className="product-page">
       <ProductGallery
@@ -59,14 +93,45 @@ export default function ProductDetails() {
 
       <div className="product-info">
         <p className="eyebrow">
-          {product.category || 'HONEY & HOME'}
+          {product.category ||
+            'HONEY & HOME'}
         </p>
 
         <h1>{product.name}</h1>
 
-        <div className="price">
-          R{Number(product.price).toFixed(2)}
-        </div>
+        {onSale ? (
+          <div className="product-sale-price">
+            <span className="sale-label">
+              SALE
+            </span>
+
+            <div>
+              <strong>
+                R{salePrice.toFixed(2)}
+              </strong>
+
+              <span>
+                R{normalPrice.toFixed(2)}
+              </span>
+            </div>
+          </div>
+        ) : (
+          <div className="price">
+            R{normalPrice.toFixed(2)}
+          </div>
+        )}
+
+        <p
+          className={
+            outOfStock
+              ? 'stock-status product-stock out'
+              : 'stock-status product-stock'
+          }
+        >
+          {outOfStock
+            ? 'Out of stock'
+            : `${stock} in stock`}
+        </p>
 
         <p>
           {product.description ||
@@ -74,11 +139,18 @@ export default function ProductDetails() {
         </p>
 
         <button
-          className="button"
-          onClick={() => add(product)}
+          className={`button ${outOfStock
+            ? 'disabled-button'
+            : ''
+            }`}
+          onClick={() => add(cartProduct)}
+          disabled={outOfStock}
         >
           <ShoppingBag size={18} />
-          Add to cart
+
+          {outOfStock
+            ? 'Out of stock'
+            : 'Add to cart'}
         </button>
 
         <a

@@ -1,9 +1,12 @@
 import { useState } from 'react';
 import {
-  addDoc,
   collection,
+  doc,
+  getDoc,
+  addDoc,
   serverTimestamp,
 } from 'firebase/firestore';
+import { Link } from 'react-router-dom';
 
 import { db } from '../lib/firebase';
 import { useCart } from '../context/CartContext';
@@ -23,66 +26,259 @@ export default function Checkout() {
   });
 
   const [status, setStatus] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [orderNumber, setOrderNumber] = useState('');
 
   const delivery = 150;
-  const total = subtotal + delivery;
+  const displayedTotal = subtotal + delivery;
 
   async function submit(event) {
     event.preventDefault();
 
-    if (!items.length) {
+    if (!items.length || busy) {
       return;
     }
 
+    setBusy(true);
+    setStatus('');
+
     try {
-      await addDoc(
+      /*
+       * Get the latest product information
+       * directly from Firestore.
+       */
+      const checkedProducts = [];
+
+      for (const item of items) {
+        const productRef = doc(
+          db,
+          'products',
+          item.id
+        );
+
+        const productSnapshot =
+          await getDoc(productRef);
+
+        if (!productSnapshot.exists()) {
+          throw new Error(
+            `${item.name} is no longer available. Please remove it from your cart.`
+          );
+        }
+
+        const product = {
+          id: productSnapshot.id,
+          ...productSnapshot.data(),
+        };
+
+        const currentStock = Number(
+          product.stock ?? 0
+        );
+
+        const requestedQuantity = Number(
+          item.qty
+        );
+
+        if (currentStock <= 0) {
+          throw new Error(
+            `${product.name} is currently out of stock.`
+          );
+        }
+
+        if (
+          requestedQuantity >
+          currentStock
+        ) {
+          throw new Error(
+            `${product.name} only has ${currentStock} available. Please update your cart quantity.`
+          );
+        }
+
+        const normalPrice = Number(
+          product.price || 0
+        );
+
+        const salePrice = Number(
+          product.salePrice || 0
+        );
+
+        const onSale =
+          salePrice > 0 &&
+          salePrice < normalPrice;
+
+        const currentPrice = onSale
+          ? salePrice
+          : normalPrice;
+
+        checkedProducts.push({
+          id: product.id,
+          name: product.name,
+          price: currentPrice,
+          originalPrice: normalPrice,
+          qty: requestedQuantity,
+          image:
+            product.images?.[0] || '',
+        });
+      }
+
+      /*
+       * Calculate totals using the current
+       * Firestore prices rather than prices
+       * stored in the customer's browser.
+       */
+      const verifiedSubtotal =
+        checkedProducts.reduce(
+          (total, item) =>
+            total +
+            item.price * item.qty,
+          0
+        );
+
+      const verifiedTotal =
+        verifiedSubtotal + delivery;
+
+      /*
+       * Create the order.
+       *
+       * Stock is NOT reduced here yet.
+       * We'll handle stock securely when
+       * payment processing is connected.
+       */
+      const orderRef = await addDoc(
         collection(db, 'orders'),
         {
-          customer: form,
+          customer: {
+            name: form.name.trim(),
+            phone: form.phone.trim(),
+            address:
+              form.address.trim(),
+            city: form.city.trim(),
+          },
 
-          items: items.map(
-            ({
-              id,
-              name,
-              price,
-              qty,
-            }) => ({
-              id,
-              name,
-              price,
-              qty,
-            })
-          ),
+          items: checkedProducts,
 
-          subtotal,
+          subtotal: verifiedSubtotal,
           delivery,
-          total,
+          total: verifiedTotal,
 
-          status: 'pending-payment',
+          status: 'pending',
+          paymentStatus: 'unpaid',
 
           createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
         }
       );
 
+      setOrderNumber(orderRef.id);
+      setSuccess(true);
+
       setStatus(
-        'Order saved. Payment options will be connected after your merchant accounts are approved.'
+        'Your order has been received successfully.'
       );
 
       clear();
     } catch (error) {
-      setStatus(error.message);
+      console.error(error);
+
+      setStatus(
+        error.message ||
+        'Something went wrong. Please try again.'
+      );
+    } finally {
+      setBusy(false);
     }
   }
 
+  /*
+   * ORDER SUCCESS
+   */
+  if (success) {
+    return (
+      <section className="section checkout">
+        <div className="checkout-success">
+          <p className="eyebrow">
+            HONEY & HOME CO
+          </p>
+
+          <h1>Thank you!</h1>
+
+          <p>
+            Your order has been received
+            successfully.
+          </p>
+
+          <div className="order-number-box">
+            <small>
+              YOUR ORDER NUMBER
+            </small>
+
+            <strong>
+              #
+              {orderNumber
+                .slice(0, 8)
+                .toUpperCase()}
+            </strong>
+          </div>
+
+          <p>
+            Your order is currently awaiting
+            payment.
+          </p>
+
+          <p>
+            Please keep your order number for
+            reference.
+          </p>
+
+          <Link
+            className="button"
+            to="/shop"
+          >
+            Continue shopping
+          </Link>
+        </div>
+      </section>
+    );
+  }
+
+  /*
+   * EMPTY CART
+   */
+  if (!items.length) {
+    return (
+      <section className="section empty">
+        <h1>Your cart is empty</h1>
+
+        <p>
+          Add some Honey & Home favourites
+          before checking out.
+        </p>
+
+        <Link
+          className="button"
+          to="/shop"
+        >
+          Start shopping
+        </Link>
+      </section>
+    );
+  }
+
+  /*
+   * CHECKOUT
+   */
   return (
     <section className="section checkout">
+      <p className="eyebrow">
+        HONEY & HOME CO
+      </p>
+
       <h1>Checkout</h1>
 
       <div className="notice">
-        Secure card, Payflex, PayJustNow and Happy Pay
-        integrations are prepared as the next step.
-        Never enter card numbers directly into this
-        website until a payment gateway is connected.
+        Payment options are being connected.
+        Your order will currently be saved as
+        awaiting payment.
       </div>
 
       <form onSubmit={submit}>
@@ -91,6 +287,7 @@ export default function Checkout() {
 
           <input
             required
+            type="text"
             value={form.name}
             onChange={(event) =>
               setForm({
@@ -98,6 +295,7 @@ export default function Checkout() {
                 name: event.target.value,
               })
             }
+            placeholder="Your full name"
           />
         </label>
 
@@ -106,6 +304,7 @@ export default function Checkout() {
 
           <input
             required
+            type="tel"
             value={form.phone}
             onChange={(event) =>
               setForm({
@@ -113,6 +312,7 @@ export default function Checkout() {
                 phone: event.target.value,
               })
             }
+            placeholder="e.g. 078 123 4567"
           />
         </label>
 
@@ -121,13 +321,16 @@ export default function Checkout() {
 
           <textarea
             required
+            rows="4"
             value={form.address}
             onChange={(event) =>
               setForm({
                 ...form,
-                address: event.target.value,
+                address:
+                  event.target.value,
               })
             }
+            placeholder="Street address, complex/house number..."
           />
         </label>
 
@@ -136,6 +339,7 @@ export default function Checkout() {
 
           <input
             required
+            type="text"
             value={form.city}
             onChange={(event) =>
               setForm({
@@ -143,32 +347,77 @@ export default function Checkout() {
                 city: event.target.value,
               })
             }
+            placeholder="e.g. Rustenburg"
           />
         </label>
+
+        {/* ORDER SUMMARY */}
+
+        <div className="checkout-items">
+          <h3>Order summary</h3>
+
+          {items.map((item) => (
+            <div
+              className="checkout-item"
+              key={item.id}
+            >
+              <span>
+                {item.name} × {item.qty}
+              </span>
+
+              <strong>
+                R
+                {(
+                  Number(item.price) *
+                  Number(item.qty)
+                ).toFixed(2)}
+              </strong>
+            </div>
+          ))}
+        </div>
+
+        {/* TOTALS */}
 
         <div className="totals">
           <p>
             Products
-            <b>R{subtotal.toFixed(2)}</b>
+
+            <b>
+              R{subtotal.toFixed(2)}
+            </b>
           </p>
 
           <p>
             Delivery
+
             <b>R150.00</b>
           </p>
 
           <h3>
             Total
-            <b>R{total.toFixed(2)}</b>
+
+            <b>
+              R
+              {displayedTotal.toFixed(2)}
+            </b>
           </h3>
         </div>
 
-        <button className="button">
-          Create order
+        <button
+          className="button"
+          disabled={busy}
+        >
+          {busy
+            ? 'Checking your order...'
+            : `Place order — R${displayedTotal.toFixed(
+              2
+            )}`}
         </button>
 
         {status && (
-          <p>{status}</p>
+          <p className="checkout-message">
+            {status}
+          </p>
         )}
       </form>
     </section>

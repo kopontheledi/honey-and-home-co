@@ -33,50 +33,90 @@ export default function Cart() {
 
       <div className="cart-layout">
         <div>
-          {items.map((item) => (
-            <div
-              className="cart-item"
-              key={item.id}
-            >
-              <img
-                src={
-                  item.images?.[0] ||
-                  'https://placehold.co/120'
-                }
-                alt={item.name}
-              />
+          {items.map((item) => {
+            const stock = Number(
+              item.stock ?? 0
+            );
 
-              <div>
-                <h3>{item.name}</h3>
-
-                <p>
-                  R{Number(item.price).toFixed(2)}
-                </p>
-
-                <input
-                  type="number"
-                  min="1"
-                  value={item.qty}
-                  onChange={(event) =>
-                    setQty(
-                      item.id,
-                      Number(event.target.value)
-                    )
-                  }
-                />
-              </div>
-
-              <button
-                className="icon-button"
-                onClick={() =>
-                  remove(item.id)
-                }
-                aria-label={`Remove ${item.name}`}
+            return (
+              <div
+                className="cart-item"
+                key={item.id}
               >
-                <Trash2 />
-              </button>
-            </div>
-          ))}
+                <img
+                  src={
+                    item.images?.[0] ||
+                    'https://placehold.co/120'
+                  }
+                  alt={item.name}
+                />
+
+                <div>
+                  <h3>{item.name}</h3>
+
+                  <p>
+                    R
+                    {Number(
+                      item.price
+                    ).toFixed(2)}
+                  </p>
+
+                  {stock > 0 ? (
+                    <>
+                      <small className="cart-stock">
+                        {stock} available
+                      </small>
+
+                      <div className="cart-quantity">
+                        <label>
+                          Qty
+                        </label>
+
+                        <input
+                          type="number"
+                          min="1"
+                          max={stock}
+                          value={item.qty}
+                          onChange={(
+                            event
+                          ) =>
+                            setQty(
+                              item.id,
+                              event.target
+                                .value
+                            )
+                          }
+                        />
+                      </div>
+
+                      {item.qty >= stock && (
+                        <small className="stock-limit">
+                          Maximum available
+                          quantity reached.
+                        </small>
+                      )}
+                    </>
+                  ) : (
+                    <p className="stock-status out">
+                      This product is
+                      currently out of
+                      stock.
+                    </p>
+                  )}
+                </div>
+
+                <button
+                  className="icon-button"
+                  onClick={() =>
+                    remove(item.id)
+                  }
+                  aria-label={`Remove ${item.name}`}
+                >
+                  <Trash2 />
+                </button>
+              </div>
+            );
+          })}
         </div>
 
         <aside className="checkout-box">
